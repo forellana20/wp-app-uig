@@ -1,0 +1,14 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+*.pem
+*.key
+*service-account*.json
+*credentials*.json
+
+!.terraform.lock.hcl
+!terraform.tfvars.example
