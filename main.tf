@@ -42,6 +42,8 @@ module "security" {
   vpn_cidr                   = var.vpn_cidr
   internal_proxy_subnet_cidr = local.proxy_subnet_cidr
   allowed_ip_ranges          = var.allowed_ip_ranges
+  allowed_ip_rule_groups     = var.allowed_ip_rule_groups
+  external_domain            = var.domain
   labels                     = local.common_labels
 
   depends_on = [module.network]

@@ -210,6 +210,16 @@ variable "allowed_ip_ranges" {
   default     = []
 }
 
+variable "allowed_ip_rule_groups" {
+  description = "Grupos adicionales de IPs permitidas en Cloud Armor."
+  type = list(object({
+    priority    = number
+    description = string
+    ip_ranges   = list(string)
+  }))
+  default = []
+}
+
 # ─── Etiquetas ───────────────────────────────────────────────────────────────
 
 variable "labels" {

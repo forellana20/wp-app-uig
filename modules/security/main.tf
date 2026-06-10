@@ -176,12 +176,6 @@ resource "google_compute_firewall" "deny_all_ingress" {
 # ─── Cloud Armor Security Policy ────────────────────────────────────────────
 # Protección WAF contra ataques comunes
 
-locals {
-  cloud_armor_allowed_ip_expression = length(var.allowed_ip_ranges) > 0 ? join(" || ", [
-    for cidr in var.allowed_ip_ranges : "inIpRange(origin.ip, '${cidr}')"
-  ]) : "false"
-}
-
 resource "google_compute_security_policy" "wordpress" {
   name        = "${var.name_prefix}-cloud-armor"
   project     = var.project_id
@@ -202,13 +196,27 @@ resource "google_compute_security_policy" "wordpress" {
     description = "Regla por defecto - denegar tráfico"
   }
 
+  # Regla: bloquear accesos por IP directa u otros host headers.
+  rule {
+    action   = "deny(403)"
+    priority = "700"
+
+    match {
+      expr {
+        expression = "!has(request.headers['host']) || request.headers['host'] != '${var.external_domain}'"
+      }
+    }
+
+    description = "Bloquear accesos sin dominio publico valido"
+  }
+
   # Regla: Permitir explícitamente todo el portal desde IPs autorizadas.
   dynamic "rule" {
     for_each = length(var.allowed_ip_ranges) > 0 ? [1] : []
 
     content {
       action   = "allow"
-      priority = "800"
+      priority = "5000"
 
       match {
         versioned_expr = "SRC_IPS_V1"
@@ -218,6 +226,27 @@ resource "google_compute_security_policy" "wordpress" {
       }
 
       description = "Permitir acceso al portal desde IPs autorizadas"
+    }
+  }
+
+  # Reglas adicionales: grupos de IPs publicas del cliente.
+  dynamic "rule" {
+    for_each = {
+      for group in var.allowed_ip_rule_groups : tostring(group.priority) => group
+    }
+
+    content {
+      action   = "allow"
+      priority = rule.value.priority
+
+      match {
+        versioned_expr = "SRC_IPS_V1"
+        config {
+          src_ip_ranges = rule.value.ip_ranges
+        }
+      }
+
+      description = rule.value.description
     }
   }
 
@@ -292,28 +321,6 @@ resource "google_compute_security_policy" "wordpress" {
   #   description = "Restringir wp-login solo a IPs de VPN"
   # }
 
-  # Regla: Rate limiting para proteger contra DDoS en capa 7
-  rule {
-    action   = "throttle"
-    priority = "2000"
-
-    match {
-      versioned_expr = "SRC_IPS_V1"
-      config {
-        src_ip_ranges = ["*"]
-      }
-    }
-
-    rate_limit_options {
-      conform_action = "allow"
-      exceed_action  = "deny(429)"
-
-      rate_limit_threshold {
-        count        = 100
-        interval_sec = 60
-      }
-    }
-
-    description = "Rate limiting: máx 100 requests/minuto por IP"
-  }
+  # No agregar reglas throttle globales en modo allowlist. En Cloud Armor,
+  # conform_action = "allow" permitiria trafico publico antes del default deny.
 }

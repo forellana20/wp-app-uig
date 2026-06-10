@@ -50,6 +50,21 @@ variable "allowed_ip_ranges" {
   default     = []
 }
 
+variable "allowed_ip_rule_groups" {
+  description = "Grupos adicionales de IPs permitidas para Cloud Armor."
+  type = list(object({
+    priority    = number
+    description = string
+    ip_ranges   = list(string)
+  }))
+  default = []
+}
+
+variable "external_domain" {
+  description = "Dominio publico esperado en el Host header del Load Balancer externo"
+  type        = string
+}
+
 variable "labels" {
   description = "Etiquetas comunes"
   type        = map(string)
