@@ -679,13 +679,22 @@ log "Configurando Apache..."
 a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
 a2enmod mpm_prefork php8.1 rewrite headers expires remoteip setenvif status >/dev/null
 
-cat > /etc/apache2/conf-available/security-hardening.conf <<'APACHE_SECURITY'
+cat > /etc/apache2/conf-available/z-security-hardening.conf <<'APACHE_SECURITY'
 ServerTokens Prod
 ServerSignature Off
 TraceEnable Off
+FileETag None
+
+Header always unset X-Powered-By
+Header always set X-Content-Type-Options "nosniff"
+Header always set X-Frame-Options "SAMEORIGIN"
+Header always set Referrer-Policy "strict-origin-when-cross-origin"
+Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 APACHE_SECURITY
 
-a2enconf security-hardening >/dev/null
+a2disconf security-hardening >/dev/null 2>&1 || true
+a2enconf z-security-hardening >/dev/null
 
 echo "OK" > "$WP_DIR/health"
 chown www-data:www-data "$WP_DIR/health"
