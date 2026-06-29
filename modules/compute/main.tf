@@ -21,6 +21,13 @@ resource "terraform_data" "subnet_change" {
   ]
 }
 
+resource "terraform_data" "boot_image_change" {
+  triggers_replace = [
+    var.image_family,
+    var.image_project,
+  ]
+}
+
 # --- VM unica ----------------------------------------------------------------
 
 resource "google_compute_instance" "wordpress" {
@@ -95,6 +102,7 @@ resource "google_compute_instance" "wordpress" {
 
     replace_triggered_by = [
       terraform_data.subnet_change,
+      terraform_data.boot_image_change,
     ]
   }
 }

@@ -4,7 +4,7 @@
 # Proyecto: EDUFIS - WordPress en GCP
 #
 # Este script se ejecuta automaticamente al crear la VM.
-# Instala: Apache, PHP 8.1, MySQL 8.0, WordPress (ultima version)
+# Instala: Apache/httpd, PHP, MySQL/MariaDB, WordPress (ultima version)
 #
 # Las variables son reemplazadas por Terraform via templatefile()
 ###############################################################################
@@ -37,6 +37,142 @@ echo "=========================================="
 # ─── Función de utilidad ─────────────────────────────────────────────────────
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+OS_ID=""
+OS_VERSION_ID=""
+APACHE_SERVICE=""
+APACHE_CTL=""
+APACHE_CONF_DIR=""
+APACHE_VHOST_FILE=""
+APACHE_SECURITY_FILE=""
+APACHE_LOG_DIR_VALUE=""
+WEB_USER=""
+WEB_GROUP=""
+MYSQL_SERVICE=""
+MYSQL_CONFIG_FILE=""
+MYSQL_LOG_DIR=""
+PHP_WORDPRESS_INI=""
+CRON_SERVICE=""
+SYSLOG_PATH=""
+
+detect_os() {
+  # shellcheck disable=SC1091
+  . /etc/os-release
+  OS_ID="$ID"
+  OS_VERSION_ID="$${VERSION_ID:-}"
+
+  case "$OS_ID" in
+    ubuntu|debian)
+      APACHE_SERVICE="apache2"
+      APACHE_CTL="apache2ctl"
+      APACHE_CONF_DIR="/etc/apache2"
+      APACHE_VHOST_FILE="/etc/apache2/sites-available/wordpress.conf"
+      APACHE_SECURITY_FILE="/etc/apache2/conf-available/z-security-hardening.conf"
+      APACHE_LOG_DIR_VALUE='$${APACHE_LOG_DIR}'
+      WEB_USER="www-data"
+      WEB_GROUP="www-data"
+      MYSQL_SERVICE="mysql"
+      MYSQL_CONFIG_FILE="/etc/mysql/mysql.conf.d/wordpress.cnf"
+      MYSQL_LOG_DIR="/var/log/mysql"
+      PHP_WORDPRESS_INI="/etc/php/8.1/apache2/conf.d/99-wordpress.ini"
+      CRON_SERVICE="cron"
+      SYSLOG_PATH="/var/log/syslog"
+      ;;
+    rhel|centos|rocky|almalinux)
+      APACHE_SERVICE="httpd"
+      APACHE_CTL="apachectl"
+      APACHE_CONF_DIR="/etc/httpd"
+      APACHE_VHOST_FILE="/etc/httpd/conf.d/wordpress.conf"
+      APACHE_SECURITY_FILE="/etc/httpd/conf.d/z-security-hardening.conf"
+      APACHE_LOG_DIR_VALUE="/var/log/httpd"
+      WEB_USER="apache"
+      WEB_GROUP="apache"
+      MYSQL_SERVICE="mariadb"
+      MYSQL_CONFIG_FILE="/etc/my.cnf.d/wordpress.cnf"
+      MYSQL_LOG_DIR="/var/log/mariadb"
+      PHP_WORDPRESS_INI="/etc/php.d/99-wordpress.ini"
+      CRON_SERVICE="crond"
+      SYSLOG_PATH="/var/log/messages"
+      ;;
+    *)
+      log "Sistema operativo no soportado por este startup script: $OS_ID $OS_VERSION_ID"
+      return 1
+      ;;
+  esac
+}
+
+install_os_packages() {
+  case "$OS_ID" in
+    ubuntu|debian)
+      log "Actualizando paquetes del sistema con apt..."
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get upgrade -y -qq
+
+      log "Instalando Apache, PHP, MySQL y dependencias con apt..."
+      apt-get install -y -qq apache2
+      apt-get install -y -qq \
+        libapache2-mod-php8.1 \
+        php8.1-mysql \
+        php8.1-curl \
+        php8.1-gd \
+        php8.1-intl \
+        php8.1-mbstring \
+        php8.1-soap \
+        php8.1-xml \
+        php8.1-zip \
+        php8.1-imagick \
+        php8.1-opcache \
+        php8.1-redis
+      apt-get install -y -qq mysql-server
+      apt-get install -y -qq unzip curl wget htop nfs-common tar gzip cron file
+      ;;
+    rhel|centos|rocky|almalinux)
+      log "Actualizando paquetes del sistema con dnf..."
+      dnf -y update
+
+      log "Instalando httpd, PHP, MariaDB y dependencias con dnf..."
+      dnf -y install \
+        httpd \
+        php \
+        php-cli \
+        php-fpm \
+        php-mysqlnd \
+        php-curl \
+        php-gd \
+        php-intl \
+        php-mbstring \
+        php-soap \
+        php-xml \
+        php-zip \
+        php-opcache \
+        mariadb-server \
+        unzip \
+        curl \
+        wget \
+        tar \
+        gzip \
+        file \
+        cronie \
+        policycoreutils-python-utils
+
+      dnf -y install php-pecl-imagick php-pecl-redis || log "No se pudieron instalar imagick/redis desde repos habilitados. Continuando sin esas extensiones opcionales."
+      ;;
+  esac
+}
+
+start_enable_service() {
+  local service="$1"
+
+  systemctl start "$service"
+  systemctl enable "$service"
+}
+
+restart_service() {
+  local service="$1"
+
+  systemctl restart "$service"
 }
 
 empty_dir() {
@@ -450,58 +586,27 @@ replace_wordpress_urls() {
   wp --path="$wp_dir" elementor flush_css --allow-root || true
 }
 
-# ─── Verificar si ya se ejecutó ──────────────────────────────────────────────
+# ─── Detectar SO y verificar si ya se ejecutó ───────────────────────────────
+detect_os
+
 if [ -f /opt/wordpress-installed ]; then
   log "WordPress ya está instalado. Verificando servicios..."
-  systemctl start apache2 || true
-  systemctl start mysql || true
+  systemctl start "$APACHE_SERVICE" || true
+  systemctl start "$MYSQL_SERVICE" || true
+  if [ "$OS_ID" != "ubuntu" ] && [ "$OS_ID" != "debian" ]; then
+    systemctl start php-fpm || true
+  fi
   log "Servicios verificados. Saliendo."
   exit 0
 fi
 
-# ─── Actualizar sistema ─────────────────────────────────────────────────────
-log "Actualizando paquetes del sistema..."
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get upgrade -y -qq
-
-# ─── Instalar dependencias ──────────────────────────────────────────────────
-log "Instalando Apache, PHP, MySQL y dependencias..."
-
-# Apache
-apt-get install -y -qq apache2
-
-# PHP 8.1 y extensiones necesarias para WordPress
-apt-get install -y -qq \
-  libapache2-mod-php8.1 \
-  php8.1-mysql \
-  php8.1-curl \
-  php8.1-gd \
-  php8.1-intl \
-  php8.1-mbstring \
-  php8.1-soap \
-  php8.1-xml \
-  php8.1-zip \
-  php8.1-imagick \
-  php8.1-opcache \
-  php8.1-redis
-
-# MySQL 8.0
-apt-get install -y -qq mysql-server
-
-# Herramientas adicionales
-apt-get install -y -qq \
-  unzip \
-  curl \
-  wget \
-  htop \
-  nfs-common
+# ─── Actualizar sistema e instalar dependencias ─────────────────────────────
+install_os_packages
 
 # ─── Configurar MySQL ───────────────────────────────────────────────────────
 log "Configurando MySQL..."
 
-systemctl start mysql
-systemctl enable mysql
+start_enable_service "$MYSQL_SERVICE"
 load_db_password
 
 # Crear base de datos y usuario para WordPress
@@ -522,7 +627,10 @@ FLUSH PRIVILEGES;
 MYSQL_SECURE
 
 # Optimización de MySQL para WordPress
-cat > /etc/mysql/mysql.conf.d/wordpress.cnf <<'MYSQL_CNF'
+mkdir -p "$(dirname "$MYSQL_CONFIG_FILE")" "$MYSQL_LOG_DIR"
+chown mysql:mysql "$MYSQL_LOG_DIR" 2>/dev/null || true
+
+cat > "$MYSQL_CONFIG_FILE" <<MYSQL_CNF
 [mysqld]
 # Performance
 innodb_buffer_pool_size = 256M
@@ -537,7 +645,8 @@ interactive_timeout = 600
 
 # Logging
 slow_query_log = 1
-slow_query_log_file = /var/log/mysql/slow-query.log
+slow_query_log_file = $MYSQL_LOG_DIR/slow-query.log
+log_error = $MYSQL_LOG_DIR/error.log
 long_query_time = 2
 
 # Character set
@@ -545,13 +654,15 @@ character-set-server = utf8mb4
 collation-server = utf8mb4_unicode_ci
 MYSQL_CNF
 
-systemctl restart mysql
+restart_service "$MYSQL_SERVICE"
 
 # ─── Configurar PHP ──────────────────────────────────────────────────────────
-log "Configurando PHP para Apache..."
+log "Configurando PHP para Apache/httpd..."
 
 # Ajustar php.ini para WordPress
-cat > /etc/php/8.1/apache2/conf.d/99-wordpress.ini <<'PHP_INI'
+mkdir -p "$(dirname "$PHP_WORDPRESS_INI")"
+
+cat > "$PHP_WORDPRESS_INI" <<'PHP_INI'
 ; Optimización para WordPress
 upload_max_filesize = 64M
 post_max_size = 64M
@@ -570,7 +681,11 @@ opcache.save_comments = 1
 PHP_INI
 
 mkdir -p /var/log/php
-chown www-data:www-data /var/log/php
+chown "$WEB_USER:$WEB_GROUP" /var/log/php
+
+if [ "$OS_ID" != "ubuntu" ] && [ "$OS_ID" != "debian" ]; then
+  start_enable_service php-fpm
+fi
 
 # ─── Instalar WordPress ─────────────────────────────────────────────────────
 log "Descargando e instalando WordPress..."
@@ -665,21 +780,30 @@ rm -f "$WP_EXTRA_FILE"
 import_wordpress_database
 
 # Permisos
-chown -R www-data:www-data "$WP_DIR"
+chown -R "$WEB_USER:$WEB_GROUP" "$WP_DIR"
 find "$WP_DIR" -type d -exec chmod 755 {} \;
 find "$WP_DIR" -type f -exec chmod 644 {} \;
 chmod 640 "$WP_DIR/wp-config.php"
+
+if command -v getenforce >/dev/null 2>&1 && [ "$(getenforce)" != "Disabled" ]; then
+  log "Configurando contextos SELinux para WordPress."
+  semanage fcontext -a -t httpd_sys_rw_content_t "$WP_DIR/wp-content(/.*)?" 2>/dev/null || true
+  restorecon -RFv "$WP_DIR" || true
+  setsebool -P httpd_can_network_connect on || true
+fi
 
 # Reemplazar URL local/origen por el dominio configurado
 replace_wordpress_urls "$WP_DIR"
 
 # ─── Configurar Apache ───────────────────────────────────────────────────────
-log "Configurando Apache..."
+log "Configurando Apache/httpd..."
 
-a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
-a2enmod mpm_prefork php8.1 rewrite headers expires remoteip setenvif status >/dev/null
+if [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "debian" ]; then
+  a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
+  a2enmod mpm_prefork php8.1 rewrite headers expires remoteip setenvif status >/dev/null
+fi
 
-cat > /etc/apache2/conf-available/z-security-hardening.conf <<'APACHE_SECURITY'
+cat > "$APACHE_SECURITY_FILE" <<'APACHE_SECURITY'
 ServerTokens Prod
 ServerSignature Off
 TraceEnable Off
@@ -693,20 +817,22 @@ Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
 Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 APACHE_SECURITY
 
-a2disconf security-hardening >/dev/null 2>&1 || true
-a2enconf z-security-hardening >/dev/null
+if [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "debian" ]; then
+  a2disconf security-hardening >/dev/null 2>&1 || true
+  a2enconf z-security-hardening >/dev/null
+fi
 
 echo "OK" > "$WP_DIR/health"
-chown www-data:www-data "$WP_DIR/health"
+chown "$WEB_USER:$WEB_GROUP" "$WP_DIR/health"
 chmod 644 "$WP_DIR/health"
 
-cat > /etc/apache2/sites-available/wordpress.conf <<'APACHE_VHOST'
+cat > "$APACHE_VHOST_FILE" <<APACHE_VHOST
 <VirtualHost *:80>
     ServerName _
     DocumentRoot /var/www/html
 
-    ErrorLog $${APACHE_LOG_DIR}/error.log
-    CustomLog $${APACHE_LOG_DIR}/access.log combined
+    ErrorLog $APACHE_LOG_DIR_VALUE/error.log
+    CustomLog $APACHE_LOG_DIR_VALUE/access.log combined
 
     RemoteIPHeader X-Forwarded-For
     SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on
@@ -753,24 +879,29 @@ RewriteRule . /index.php [L]
 # END WordPress
 HTACCESS
 
-chown www-data:www-data "$WP_DIR/.htaccess"
+chown "$WEB_USER:$WEB_GROUP" "$WP_DIR/.htaccess"
 chmod 644 "$WP_DIR/.htaccess"
 
-a2dissite 000-default >/dev/null
-a2ensite wordpress >/dev/null
+if [ "$OS_ID" = "ubuntu" ] || [ "$OS_ID" = "debian" ]; then
+  a2dissite 000-default >/dev/null
+  a2ensite wordpress >/dev/null
+fi
 
-apache2ctl configtest
+"$APACHE_CTL" configtest
 
-systemctl restart apache2
-systemctl enable apache2
+restart_service "$APACHE_SERVICE"
+systemctl enable "$APACHE_SERVICE"
 
 # ─── Configurar WP-Cron via sistema ─────────────────────────────────────────
 log "Configurando WP-Cron del sistema..."
 
-cat > /etc/cron.d/wordpress <<'WP_CRON'
+cat > /etc/cron.d/wordpress <<WP_CRON
 # Ejecutar WP-Cron cada 5 minutos
-*/5 * * * * www-data /usr/bin/php /var/www/html/wp-cron.php > /dev/null 2>&1
+*/5 * * * * $WEB_USER /usr/bin/php /var/www/html/wp-cron.php > /dev/null 2>&1
 WP_CRON
+
+systemctl enable "$CRON_SERVICE" >/dev/null 2>&1 || true
+systemctl start "$CRON_SERVICE" >/dev/null 2>&1 || true
 
 # ─── Configurar Ops Agent (Logging & Monitoring) ────────────────────────────
 log "Configurando Google Cloud Ops Agent..."
@@ -783,7 +914,7 @@ fi
 
 mkdir -p /etc/google-cloud-ops-agent
 
-cat > /etc/google-cloud-ops-agent/config.yaml <<'OPS_AGENT'
+cat > /etc/google-cloud-ops-agent/config.yaml <<OPS_AGENT
 logging:
   receivers:
     apache_access:
@@ -793,15 +924,16 @@ logging:
     mysql_error:
       type: mysql_error
       include_paths:
-        - /var/log/mysql/error.log
+        - $MYSQL_LOG_DIR/error.log
+        - $MYSQL_LOG_DIR/mariadb.log
     mysql_slow:
       type: mysql_slow
       include_paths:
-        - /var/log/mysql/slow-query.log
+        - $MYSQL_LOG_DIR/slow-query.log
     syslog:
       type: files
       include_paths:
-        - /var/log/syslog
+        - $SYSLOG_PATH
   service:
     pipelines:
       default_pipeline:
@@ -837,7 +969,7 @@ log "=========================================="
 log "Instalación completada exitosamente"
 log "=========================================="
 log "WordPress: /var/www/html"
-log "Apache config: /etc/apache2/sites-available/wordpress.conf"
+log "Apache config: $APACHE_VHOST_FILE"
 log "MySQL DB: $DB_NAME"
 log "Health check: http://localhost/health"
 log "=========================================="

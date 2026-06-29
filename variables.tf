@@ -100,13 +100,13 @@ variable "boot_disk_type" {
 variable "image_family" {
   description = "Familia de imagen del SO base"
   type        = string
-  default     = "ubuntu-2204-lts"
+  default     = "rhel-9"
 }
 
 variable "image_project" {
   description = "Proyecto de la imagen del SO"
   type        = string
-  default     = "ubuntu-os-cloud"
+  default     = "rhel-byos-cloud"
 }
 
 # ─── WordPress / Base de datos ───────────────────────────────────────────────
