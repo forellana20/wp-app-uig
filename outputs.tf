@@ -81,6 +81,29 @@ output "cloud_armor_policy_id" {
   value       = module.security.cloud_armor_policy_id
 }
 
+# ─── VPN ─────────────────────────────────────────────────────────────────────
+
+output "vpn_gateway_public_ip" {
+  description = "IP publica del gateway VPN de GCP para entregar al cliente."
+  value       = var.vpn_enabled ? google_compute_address.vpn_gateway[0].address : null
+}
+
+output "vpn_peer_ip" {
+  description = "IP publica del gateway VPN on-premise del cliente."
+  value       = var.vpn_enabled ? var.vpn_peer_ip : null
+}
+
+output "vpn_remote_cidrs" {
+  description = "Rangos on-premise enrutados por la VPN estatica."
+  value       = var.vpn_enabled ? local.vpn_remote_cidrs_effective : []
+}
+
+output "vpn_shared_secret" {
+  description = "Pre-shared key de la VPN. Extraer solo con terraform output -raw vpn_shared_secret y compartir por canal seguro."
+  value       = var.vpn_enabled ? local.vpn_shared_secret_effective : null
+  sensitive   = true
+}
+
 # ─── DNS Instructions ────────────────────────────────────────────────────────
 
 output "dns_instructions" {

@@ -77,6 +77,47 @@ variable "vpn_cidr" {
   default     = "10.130.20.0/24"
 }
 
+variable "vpn_enabled" {
+  description = "Habilita la VPN site-to-site clasica con rutas estaticas hacia on-premise."
+  type        = bool
+  default     = false
+}
+
+variable "vpn_peer_ip" {
+  description = "IP publica del gateway VPN on-premise del cliente."
+  type        = string
+  default     = ""
+}
+
+variable "vpn_remote_cidrs" {
+  description = "Rangos on-premise alcanzables por la VPN estatica, incluyendo Satellite si aplica."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.vpn_remote_cidrs : can(cidrhost(cidr, 0))])
+    error_message = "Todos los valores de vpn_remote_cidrs deben ser CIDR validos."
+  }
+}
+
+variable "vpn_shared_secret" {
+  description = "Pre-shared key opcional. Si queda vacia, Terraform genera una y la mantiene en el state."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "vpn_ike_version" {
+  description = "Version IKE del tunel VPN."
+  type        = number
+  default     = 2
+
+  validation {
+    condition     = contains([1, 2], var.vpn_ike_version)
+    error_message = "vpn_ike_version debe ser 1 o 2."
+  }
+}
+
 # ─── Compute ─────────────────────────────────────────────────────────────────
 
 variable "machine_type" {
@@ -107,6 +148,24 @@ variable "image_project" {
   description = "Proyecto de la imagen del SO"
   type        = string
   default     = "rhel-byos-cloud"
+}
+
+variable "rhel_satellite_server_url" {
+  description = "URL del Red Hat Satellite o Capsule del cliente para registrar RHEL. Ej: https://satellite.example.com"
+  type        = string
+  default     = ""
+}
+
+variable "rhel_satellite_org" {
+  description = "Organizacion de Red Hat Satellite usada para registrar la VM."
+  type        = string
+  default     = ""
+}
+
+variable "rhel_satellite_activation_key_secret_id" {
+  description = "ID del secreto en Secret Manager que contiene la activation key de Red Hat Satellite."
+  type        = string
+  default     = ""
 }
 
 # ─── WordPress / Base de datos ───────────────────────────────────────────────

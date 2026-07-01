@@ -91,6 +91,17 @@ resource "google_secret_manager_secret_iam_member" "wp_db_password_accessor" {
   depends_on = [module.security, google_secret_manager_secret.wp_db_password]
 }
 
+resource "google_secret_manager_secret_iam_member" "rhel_satellite_activation_key_accessor" {
+  count = var.rhel_satellite_activation_key_secret_id != "" ? 1 : 0
+
+  project   = var.project_id
+  secret_id = var.rhel_satellite_activation_key_secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${module.security.service_account_email}"
+
+  depends_on = [module.security]
+}
+
 # ─── Módulo: Compute ─────────────────────────────────────────────────────────
 
 module "compute" {
@@ -115,22 +126,33 @@ module "compute" {
 
   # Startup script renderizado con variables
   startup_script = templatefile("${path.module}/scripts/startup.sh", {
-    project_id                = var.project_id
-    db_name                   = var.wp_db_name
-    db_user                   = var.wp_db_user
-    db_password_secret_id     = var.wp_db_password_secret_id
-    wp_admin_email            = var.wp_admin_email
-    wp_domain                 = var.domain
-    wp_table_prefix           = var.wp_table_prefix
-    wp_source_url             = var.wp_source_url
-    wp_target_url             = var.wp_target_url
-    wordpress_source_gcs_uri  = var.wordpress_source_gcs_uri
-    wordpress_db_dump_gcs_uri = var.wordpress_db_dump_gcs_uri
-    gcs_access_dependency     = var.wordpress_source_bucket != "" ? google_storage_bucket_iam_member.wordpress_source_reader[0].role : ""
-    secret_access_dependency  = google_secret_manager_secret_iam_member.wp_db_password_accessor.role
+    project_id                         = var.project_id
+    db_name                            = var.wp_db_name
+    db_user                            = var.wp_db_user
+    db_password_secret_id              = var.wp_db_password_secret_id
+    wp_admin_email                     = var.wp_admin_email
+    wp_domain                          = var.domain
+    wp_table_prefix                    = var.wp_table_prefix
+    wp_source_url                      = var.wp_source_url
+    wp_target_url                      = var.wp_target_url
+    wordpress_source_gcs_uri           = var.wordpress_source_gcs_uri
+    wordpress_db_dump_gcs_uri          = var.wordpress_db_dump_gcs_uri
+    satellite_server_url               = var.rhel_satellite_server_url
+    satellite_org                      = var.rhel_satellite_org
+    satellite_activation_key_secret_id = var.rhel_satellite_activation_key_secret_id
+    gcs_access_dependency              = var.wordpress_source_bucket != "" ? google_storage_bucket_iam_member.wordpress_source_reader[0].role : ""
+    secret_access_dependency           = google_secret_manager_secret_iam_member.wp_db_password_accessor.role
   })
 
   labels = local.common_labels
+
+  depends_on = [
+    module.network,
+    module.security,
+    google_storage_bucket_iam_member.wordpress_source_reader,
+    google_secret_manager_secret_iam_member.wp_db_password_accessor,
+    google_secret_manager_secret_iam_member.rhel_satellite_activation_key_accessor,
+  ]
 }
 
 # ─── Módulo: Load Balancer ───────────────────────────────────────────────────

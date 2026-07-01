@@ -24,6 +24,9 @@ WP_SOURCE_URL="${wp_source_url}"
 WP_TARGET_URL="${wp_target_url}"
 WP_SOURCE_GCS_URI="${wordpress_source_gcs_uri}"
 WP_DB_DUMP_GCS_URI="${wordpress_db_dump_gcs_uri}"
+SATELLITE_SERVER_URL="${satellite_server_url}"
+SATELLITE_ORG="${satellite_org}"
+SATELLITE_ACTIVATION_KEY_SECRET_ID="${satellite_activation_key_secret_id}"
 GCS_ACCESS_DEPENDENCY="${gcs_access_dependency}"
 SECRET_ACCESS_DEPENDENCY="${secret_access_dependency}"
 
@@ -102,6 +105,64 @@ detect_os() {
   esac
 }
 
+register_with_satellite() {
+  if [ -z "$SATELLITE_SERVER_URL" ] || [ -z "$SATELLITE_ORG" ] || [ -z "$SATELLITE_ACTIVATION_KEY_SECRET_ID" ]; then
+    log "Satellite no esta configurado. Se asume que la imagen RHEL ya tiene repos habilitados."
+    return
+  fi
+
+  if ! command -v gcloud >/dev/null 2>&1; then
+    log "No se encontro gcloud para leer la activation key de Satellite desde Secret Manager."
+    return 1
+  fi
+
+  if command -v subscription-manager >/dev/null 2>&1 && subscription-manager identity >/dev/null 2>&1; then
+    log "La VM ya esta registrada en Red Hat Subscription Manager."
+    return
+  fi
+
+  local satellite_url
+  local activation_key
+  local attempt
+
+  satellite_url="$(printf '%s' "$SATELLITE_SERVER_URL" | sed 's#/*$##')"
+
+  log "Esperando conectividad hacia Satellite: $satellite_url"
+  for attempt in $(seq 1 40); do
+    if curl -ksf --connect-timeout 5 "$satellite_url" >/dev/null; then
+      break
+    fi
+
+    if [ "$attempt" -eq 40 ]; then
+      log "No hay conectividad hacia Satellite despues de esperar. Revisar VPN, DNS y firewall."
+      return 1
+    fi
+
+    sleep 15
+  done
+
+  log "Instalando CA consumer de Satellite."
+  curl -ksf -o /tmp/katello-ca-consumer-latest.noarch.rpm "$satellite_url/pub/katello-ca-consumer-latest.noarch.rpm"
+  rpm -Uvh --replacepkgs /tmp/katello-ca-consumer-latest.noarch.rpm
+
+  log "Leyendo activation key de Satellite desde Secret Manager."
+  activation_key="$(gcloud secrets versions access latest --secret="$SATELLITE_ACTIVATION_KEY_SECRET_ID" --project="$PROJECT_ID")"
+  if [ -z "$activation_key" ]; then
+    log "El secreto $SATELLITE_ACTIVATION_KEY_SECRET_ID no devolvio una activation key valida."
+    return 1
+  fi
+
+  log "Registrando VM RHEL contra Satellite."
+  subscription-manager register \
+    --org="$SATELLITE_ORG" \
+    --activationkey="$activation_key" \
+    --force
+
+  subscription-manager refresh
+  dnf clean all
+  dnf repolist
+}
+
 install_os_packages() {
   case "$OS_ID" in
     ubuntu|debian)
@@ -129,6 +190,8 @@ install_os_packages() {
       apt-get install -y -qq unzip curl wget htop nfs-common tar gzip cron file
       ;;
     rhel|centos|rocky|almalinux)
+      register_with_satellite
+
       log "Actualizando paquetes del sistema con dnf..."
       dnf -y update
 
