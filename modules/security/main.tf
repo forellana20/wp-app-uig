@@ -110,30 +110,6 @@ resource "google_compute_firewall" "allow_vpn_ssh" {
   }
 }
 
-# Regla: Permitir tráfico desde los proxies del Internal Application Load Balancer
-resource "google_compute_firewall" "allow_internal_lb_proxy" {
-  count   = var.internal_proxy_subnet_cidr != "" ? 1 : 0
-  name    = "${var.name_prefix}-allow-internal-lb-proxy"
-  project = var.project_id
-  network = var.vpc_id
-
-  allow {
-    protocol = "tcp"
-    ports    = ["80"]
-  }
-
-  source_ranges = [var.internal_proxy_subnet_cidr]
-  target_tags   = [var.wordpress_tag]
-  direction     = "INGRESS"
-  priority      = 1050
-
-  description = "Permitir HTTP desde la proxy-only subnet del Internal Application Load Balancer"
-
-  log_config {
-    metadata = "INCLUDE_ALL_METADATA"
-  }
-}
-
 # Regla: Permitir ICMP interno (para diagnósticos)
 resource "google_compute_firewall" "allow_internal_icmp" {
   name    = "${var.name_prefix}-allow-internal-icmp"

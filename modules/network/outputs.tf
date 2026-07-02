@@ -37,16 +37,6 @@ output "subnet_cidr" {
   value       = google_compute_subnetwork.wordpress.ip_cidr_range
 }
 
-output "proxy_subnet_name" {
-  description = "Nombre de la proxy-only subnet"
-  value       = google_compute_subnetwork.proxy.name
-}
-
-output "proxy_subnet_cidr" {
-  description = "CIDR de la proxy-only subnet"
-  value       = google_compute_subnetwork.proxy.ip_cidr_range
-}
-
 output "router_name" {
   description = "Nombre del Cloud Router"
   value       = google_compute_router.router.name

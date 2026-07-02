@@ -38,12 +38,6 @@ variable "vpn_cidr" {
   default     = ""
 }
 
-variable "internal_proxy_subnet_cidr" {
-  description = "CIDR de la proxy-only subnet del Internal/Regional Managed Load Balancer"
-  type        = string
-  default     = ""
-}
-
 variable "allowed_ip_ranges" {
   description = "Rangos de IP permitidos para Cloud Armor"
   type        = list(string)

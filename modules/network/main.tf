@@ -5,7 +5,6 @@
 # Componentes:
 #   - VPC en modo custom (sin subredes automáticas)
 #   - Subred de aplicación para WordPress
-#   - Proxy-only subnet reservada para un futuro Internal/Regional Managed LB
 #   - Cloud Router para enrutamiento dinámico
 #   - Cloud NAT para salida a internet de las VMs (sin IP pública)
 ###############################################################################
@@ -37,23 +36,6 @@ resource "google_compute_subnetwork" "wordpress" {
   }
 
   description = "Subred para VM de WordPress - ${var.environment}"
-}
-
-# ─── Proxy-only Subnet ───────────────────────────────────────────────────────
-# Requerida por load balancers regionales managed, incluyendo Internal HTTP(S) LB.
-# El load balancer externo global actual no la consume, pero se reserva el rango
-# aprobado para evitar solapes cuando se agregue el acceso interno.
-
-resource "google_compute_subnetwork" "proxy" {
-  name          = var.proxy_name
-  project       = var.project_id
-  region        = var.region
-  network       = google_compute_network.vpc.id
-  ip_cidr_range = var.proxy_cidr
-  purpose       = "REGIONAL_MANAGED_PROXY"
-  role          = "ACTIVE"
-
-  description = "Proxy-only subnet para Internal/Regional Managed LB - ${var.environment}"
 }
 
 # ─── Cloud Router ────────────────────────────────────────────────────────────

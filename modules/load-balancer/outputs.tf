@@ -36,28 +36,3 @@ output "wordpress_url" {
   description = "URL de WordPress (HTTPS)"
   value       = "https://${var.domain}"
 }
-
-output "internal_ip_address" {
-  description = "Dirección IP privada del Internal Application Load Balancer"
-  value       = var.internal_domain != "" ? google_compute_address.wordpress_internal[0].address : null
-}
-
-output "internal_wordpress_url" {
-  description = "URL interna de WordPress (HTTPS)"
-  value       = var.internal_domain != "" ? "https://${var.internal_domain}" : null
-}
-
-output "internal_dns_authorization_record_name" {
-  description = "Nombre del registro DNS requerido para autorizar el certificado interno"
-  value       = var.internal_domain != "" ? google_certificate_manager_dns_authorization.wordpress_internal[0].dns_resource_record[0].name : null
-}
-
-output "internal_dns_authorization_record_type" {
-  description = "Tipo del registro DNS requerido para autorizar el certificado interno"
-  value       = var.internal_domain != "" ? google_certificate_manager_dns_authorization.wordpress_internal[0].dns_resource_record[0].type : null
-}
-
-output "internal_dns_authorization_record_data" {
-  description = "Valor del registro DNS requerido para autorizar el certificado interno"
-  value       = var.internal_domain != "" ? google_certificate_manager_dns_authorization.wordpress_internal[0].dns_resource_record[0].data : null
-}

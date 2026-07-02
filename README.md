@@ -125,8 +125,7 @@ Crear o editar `terraform.tfvars` con los valores reales:
 | `region` | Región de despliegue | `us-east1` |
 | `prefix` | Prefijo de recursos | `edufis` |
 | `environment` | Ambiente (`dev` o `prod`) | `dev` |
-| `subnet_cidr` | Subred de aplicación DEV; si se omite usa el rango aprobado de DEV | `10.133.0.0/25` |
-| `proxy_subnet_cidr` | Proxy-only subnet DEV para futuro LB interno/regional | `10.133.0.128/25` |
+| `subnet_cidr` | Subred de aplicación; si se omite usa el rango aprobado del ambiente | `10.133.0.0/27` |
 | `wp_db_name` | Nombre de la base de datos de WordPress; debe coincidir con el dump migrado | `edufis_db` |
 | `wp_db_user` | Usuario MySQL usado por WordPress | `wp_edufis` |
 | `wp_db_password_secret_id` | ID del secreto de Secret Manager con la contraseña MySQL | `edufis-dev-wp-db-password` |
@@ -138,8 +137,6 @@ Crear o editar `terraform.tfvars` con los valores reales:
 | `wordpress_db_dump_gcs_uri` | Dump SQL opcional a importar | `gs://portal-edufis/database/edufis_db.sql` |
 | `domain` | Dominio para SSL | `edufis.example.com` |
 | `public_dns_managed_zone` | Zona Cloud DNS pública para crear el A externo automáticamente. Vacío si DNS lo administra el cliente | `""` |
-| `internal_dns_managed_zone` | Zona Cloud DNS privada para crear el A interno automáticamente. Vacío si DNS lo administra el cliente | `""` |
-| `certificate_dns_authorization_managed_zone` | Zona Cloud DNS autoritativa para crear el CNAME de autorización del certificado interno. Vacío usa `public_dns_managed_zone` si existe | `""` |
 
 ### Paso 2: Inicializar Terraform
 
@@ -161,15 +158,14 @@ terraform apply tfplan
 
 ### Paso 5: Configurar DNS
 
-Después del despliegue, Terraform mostrará los registros DNS requeridos. Si el DNS lo administra el cliente fuera de GCP, solicitar la creación manual de estos registros. Si existen zonas Cloud DNS administradas en el proyecto, configurar `public_dns_managed_zone`, `internal_dns_managed_zone` y/o `certificate_dns_authorization_managed_zone` para que Terraform cree los registros automáticamente.
+Después del despliegue, Terraform mostrará el registro DNS externo requerido. Si el DNS lo administra el cliente fuera de GCP, solicitar la creación manual del registro. Si existe una zona Cloud DNS pública administrada en el proyecto, configurar `public_dns_managed_zone` para que Terraform cree el registro automáticamente.
 
 ```bash
 # Ver la IP del Load Balancer externo
 terraform output load_balancer_ip
 
-# Ver instrucciones completas de DNS externo e interno
+# Ver instrucciones completas de DNS externo
 terraform output dns_instructions
-terraform output internal_dns_instructions
 
 # Ver registros administrados por Terraform en Cloud DNS, si aplica
 terraform output cloud_dns_records_managed_by_terraform
@@ -180,10 +176,8 @@ Registros esperados para el ambiente DEV actual:
 | Uso | Nombre | Tipo | Valor |
 |-----|--------|------|-------|
 | Externo público | `www.edufis-dev-ext.mh.gob.sv` | `A` | IP pública del output `load_balancer_ip` |
-| Interno privado | `www.edufis-dev-int.mh.gob.sv` | `A` | IP privada del output `internal_load_balancer_ip` |
-| Validación certificado interno | `_acme-challenge_xpkldmcy2xhsao7y.www.edufis-dev-int.mh.gob.sv.` | `CNAME` | Valor del output `internal_dns_instructions` |
 
-El registro `A` externo debe resolver públicamente para que el certificado externo Google-managed salga de `FAILED_NOT_VISIBLE`. El registro `CNAME` de validación del certificado interno debe estar en el DNS autoritativo consultable por Google; el `A` interno puede permanecer solo en DNS privado corporativo.
+El registro `A` externo debe resolver públicamente para que el certificado externo Google-managed salga de `FAILED_NOT_VISIBLE`.
 
 ### Paso 6: Verificar
 

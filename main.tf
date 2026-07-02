@@ -23,8 +23,6 @@ module "network" {
   environment = var.environment
   subnet_name = local.app_subnet_name
   subnet_cidr = local.app_subnet_cidr
-  proxy_name  = local.proxy_subnet_name
-  proxy_cidr  = local.proxy_subnet_cidr
   labels      = local.common_labels
 }
 
@@ -40,7 +38,6 @@ module "security" {
   google_health_check_ranges = local.google_health_check_ranges
   google_iap_range           = local.google_iap_range
   vpn_cidr                   = var.vpn_cidr
-  internal_proxy_subnet_cidr = local.proxy_subnet_cidr
   allowed_ip_ranges          = var.allowed_ip_ranges
   allowed_ip_rule_groups     = var.allowed_ip_rule_groups
   external_domain            = var.domain
@@ -163,12 +160,9 @@ module "load_balancer" {
   name_prefix                  = local.name_prefix
   project_id                   = var.project_id
   region                       = var.region
-  network_self_link            = module.network.vpc_self_link
-  subnet_self_link             = module.network.subnet_self_link
   instance_group               = module.compute.instance_group_self_link
   cloud_armor_policy_self_link = module.security.cloud_armor_policy_self_link
   domain                       = var.domain
-  internal_domain              = var.internal_domain
   labels                       = local.common_labels
 
   depends_on = [module.compute, module.security]

@@ -60,17 +60,6 @@ variable "subnet_cidr" {
   }
 }
 
-variable "proxy_subnet_cidr" {
-  description = "CIDR de la proxy-only subnet para un futuro Internal/Regional Managed LB. Si es null, se usa el rango aprobado para el ambiente."
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.proxy_subnet_cidr == null || can(cidrhost(var.proxy_subnet_cidr, 0))
-    error_message = "proxy_subnet_cidr debe ser un CIDR válido o null."
-  }
-}
-
 variable "vpn_cidr" {
   description = "CIDR de la red VPN (oficinas/on-premise)"
   type        = string
@@ -237,26 +226,8 @@ variable "domain" {
   default     = "edufis.example.com"
 }
 
-variable "internal_domain" {
-  description = "Dominio interno para el Internal Application Load Balancer. Si queda vacío, no se crea el LB interno."
-  type        = string
-  default     = ""
-}
-
 variable "public_dns_managed_zone" {
   description = "Nombre de la zona Cloud DNS pública/autoritativa donde se creará el registro A externo. Vacío deshabilita la creación automática."
-  type        = string
-  default     = ""
-}
-
-variable "internal_dns_managed_zone" {
-  description = "Nombre de la zona Cloud DNS privada donde se creará el registro A interno. Vacío deshabilita la creación automática."
-  type        = string
-  default     = ""
-}
-
-variable "certificate_dns_authorization_managed_zone" {
-  description = "Nombre de la zona Cloud DNS autoritativa donde se creará el CNAME de autorización del certificado interno. Si queda vacío y public_dns_managed_zone está definido, se usará public_dns_managed_zone."
   type        = string
   default     = ""
 }

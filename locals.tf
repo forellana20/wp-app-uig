@@ -15,21 +15,23 @@ locals {
     application = "wordpress"
   })
 
-  # ─── Rangos de red aprobados para DEV ─────────────────────────────────────
+  # ─── Rangos de red aprobados dentro de 10.133.0.0/24 ──────────────────────
+  # El alcance actual no incluye Internal Load Balancer; solo se reservan
+  # subredes de aplicación para VM privada detrás de Load Balancer externo.
   environment_network_defaults = {
     dev = {
-      app_subnet_name   = "subnet-edufis-app"
-      app_subnet_cidr   = "10.133.0.0/25"
-      proxy_subnet_name = "subnet-edufis-proxy"
-      proxy_subnet_cidr = "10.133.0.128/25"
+      app_subnet_name = "subnet-edufis-app-dev"
+      app_subnet_cidr = "10.133.0.0/27"
+    }
+    prod = {
+      app_subnet_name = "subnet-edufis-app-prod"
+      app_subnet_cidr = "10.133.0.32/27"
     }
   }
 
   selected_network_defaults = lookup(local.environment_network_defaults, var.environment, {})
   app_subnet_name           = lookup(local.selected_network_defaults, "app_subnet_name", "subnet-${var.prefix}-app-${var.environment}")
-  proxy_subnet_name         = lookup(local.selected_network_defaults, "proxy_subnet_name", "subnet-${var.prefix}-proxy-${var.environment}")
   app_subnet_cidr           = coalesce(var.subnet_cidr, lookup(local.selected_network_defaults, "app_subnet_cidr", null))
-  proxy_subnet_cidr         = coalesce(var.proxy_subnet_cidr, lookup(local.selected_network_defaults, "proxy_subnet_cidr", null))
 
   # ─── Rangos de IP de Google para health checks y load balancers ────────────
   # Estos son los rangos oficiales de Google para health checks del LB

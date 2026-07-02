@@ -32,16 +32,6 @@ variable "subnet_cidr" {
   type        = string
 }
 
-variable "proxy_name" {
-  description = "Nombre de la proxy-only subnet"
-  type        = string
-}
-
-variable "proxy_cidr" {
-  description = "CIDR de la proxy-only subnet para Internal/Regional Managed LB"
-  type        = string
-}
-
 variable "labels" {
   description = "Etiquetas comunes"
   type        = map(string)

@@ -20,16 +20,6 @@ output "subnet_cidr" {
   value       = module.network.subnet_cidr
 }
 
-output "proxy_subnet_name" {
-  description = "Nombre de la proxy-only subnet"
-  value       = module.network.proxy_subnet_name
-}
-
-output "proxy_subnet_cidr" {
-  description = "CIDR de la proxy-only subnet"
-  value       = module.network.proxy_subnet_cidr
-}
-
 # ─── Load Balancer ───────────────────────────────────────────────────────────
 
 output "load_balancer_ip" {
@@ -40,16 +30,6 @@ output "load_balancer_ip" {
 output "wordpress_url" {
   description = "URL de acceso a WordPress"
   value       = module.load_balancer.wordpress_url
-}
-
-output "internal_load_balancer_ip" {
-  description = "IP privada del Internal Application Load Balancer"
-  value       = module.load_balancer.internal_ip_address
-}
-
-output "internal_wordpress_url" {
-  description = "URL interna de acceso a WordPress"
-  value       = module.load_balancer.internal_wordpress_url
 }
 
 # ─── Compute ─────────────────────────────────────────────────────────────────
@@ -129,39 +109,6 @@ output "dns_instructions" {
   EOT
 }
 
-output "internal_dns_instructions" {
-  description = "Instrucciones para configurar DNS interno y autorización del certificado interno"
-  value = var.internal_domain != "" ? (
-    <<-EOT
-
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║             CONFIGURACIÓN DNS INTERNA / CERTIFICADO            ║
-    ╠══════════════════════════════════════════════════════════════════╣
-    ║                                                                 ║
-    ║  Registro A interno para el acceso privado:                     ║
-    ║                                                                 ║
-    ║  Nombre:  ${var.internal_domain}
-    ║  Tipo:    A                                                     ║
-    ║  Valor:   ${module.load_balancer.internal_ip_address}
-    ║  TTL:     300                                                   ║
-    ║                                                                 ║
-    ║  Registro CNAME para autorizar el certificado Google-managed:   ║
-    ║                                                                 ║
-    ║  Nombre:  ${module.load_balancer.internal_dns_authorization_record_name}
-    ║  Tipo:    ${module.load_balancer.internal_dns_authorization_record_type}
-    ║  Valor:   ${module.load_balancer.internal_dns_authorization_record_data}
-    ║                                                                 ║
-    ║  El certificado interno se emitirá cuando el CNAME de           ║
-    ║  autorización resuelva correctamente en el DNS autoritativo     ║
-    ║  consultable por Google. El registro A interno puede vivir en   ║
-    ║  DNS privado, pero el CNAME de validación debe ser visible      ║
-    ║  para Certificate Manager.                                      ║
-    ║                                                                 ║
-    ╚══════════════════════════════════════════════════════════════════╝
-  EOT
-  ) : ""
-}
-
 output "cloud_dns_records_managed_by_terraform" {
   description = "Resumen de registros DNS que Terraform administra en Cloud DNS. Si está vacío, el DNS debe gestionarse fuera de Terraform."
   value = {
@@ -172,19 +119,6 @@ output "cloud_dns_records_managed_by_terraform" {
       value = module.load_balancer.global_ip_address
     } : null
 
-    internal_a = var.internal_domain != "" && var.internal_dns_managed_zone != "" ? {
-      zone  = var.internal_dns_managed_zone
-      name  = local.internal_dns_name
-      type  = "A"
-      value = module.load_balancer.internal_ip_address
-    } : null
-
-    internal_certificate_cname = var.internal_domain != "" && local.certificate_dns_authorization_zone != "" ? {
-      zone  = local.certificate_dns_authorization_zone
-      name  = module.load_balancer.internal_dns_authorization_record_name
-      type  = module.load_balancer.internal_dns_authorization_record_type
-      value = module.load_balancer.internal_dns_authorization_record_data
-    } : null
   }
 }
 
