@@ -136,11 +136,11 @@ variable "image_family" {
 variable "image_project" {
   description = "Proyecto de la imagen del SO"
   type        = string
-  default     = "rhel-byos-cloud"
+  default     = "rhel-cloud"
 }
 
 variable "image_self_link" {
-  description = "Self link de una imagen RHEL provista por el cliente. Si se define, evita consultar image_family/image_project."
+  description = "Self link de una imagen especifica. Si se define, evita consultar image_family/image_project."
   type        = string
   default     = ""
 }
