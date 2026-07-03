@@ -25,7 +25,7 @@ locals {
     }
     prod = {
       app_subnet_name = "subnet-edufis-app-prod"
-      app_subnet_cidr = "10.133.0.128/27"
+      app_subnet_cidr = "10.133.0.128/25"
     }
   }
 
