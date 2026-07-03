@@ -20,12 +20,12 @@ locals {
   # subredes de aplicación para VM privada detrás de Load Balancer externo.
   environment_network_defaults = {
     dev = {
-      app_subnet_name = "subnet-edufis-app-dev"
-      app_subnet_cidr = "10.133.0.0/27"
+      app_subnet_name = "subnet-edufis-app"
+      app_subnet_cidr = "10.133.0.0/25"
     }
     prod = {
       app_subnet_name = "subnet-edufis-app-prod"
-      app_subnet_cidr = "10.133.0.32/27"
+      app_subnet_cidr = "10.133.0.128/27"
     }
   }
 
