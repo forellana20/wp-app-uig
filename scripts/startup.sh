@@ -309,10 +309,10 @@ gcs_cp_dir() {
   local source="$1"
   local destination="$2"
 
-  if command -v gsutil >/dev/null 2>&1; then
-    gsutil -m cp -r "$source" "$destination"
-  elif command -v gcloud >/dev/null 2>&1; then
+  if command -v gcloud >/dev/null 2>&1; then
     gcloud storage cp --recursive "$source" "$destination"
+  elif command -v gsutil >/dev/null 2>&1; then
+    gsutil -m cp -r "$source" "$destination"
   else
     log "No se encontro gcloud ni gsutil para copiar directorios desde GCS."
     return 1
@@ -323,19 +323,140 @@ gcs_copy_wordpress_tree() {
   local source="$1"
   local target_dir="$2"
   local normalized_source="$${source%/}"
+  local item
+  local root_file
+  local component
+  local plugin
+  local active_plugins=(
+    3d-image-gallery
+    ajax-search-lite
+    album-and-image-gallery-plus-lightbox
+    animate-in-view
+    better-search-replace
+    carousel-block
+    disable-json-api
+    download-manager
+    dynamic-featured-image
+    elementor
+    embed-power-bi-reports
+    essential-addons-for-elementor-lite
+    foogallery
+    galeria-instituciones-gobsv
+    gt3-photo-video-gallery
+    gtranslate
+    header-footer-elementor
+    image-compare-block
+    image-gallery-block
+    instituciones-gobsv-post-type
+    limit-login-attempts-reloaded
+    meow-gallery
+    nextgen-gallery
+    photo-gallery
+    photonic
+    programas-gobsv-post-type-1
+    robo-gallery
+    royal-elementor-addons
+    safe-svg
+    sitetree
+    superlist-block
+    two-factor-authentication
+    wordpress-seo
+    wp-mail-smtp
+    wpforms-lite
+    wps-hide-login
+    youtube-embed-plus
+  )
 
-  if command -v gsutil >/dev/null 2>&1; then
-    log "Sincronizando WordPress con gsutil rsync desde GCS. Esto preserva estructura y paraleliza la copia."
-    gsutil -m rsync -r -d -x '.*\.sql(\.gz)?$' "$normalized_source" "$target_dir"
-  elif command -v gcloud >/dev/null 2>&1; then
-    log "gsutil no esta disponible. Usando gcloud storage rsync como respaldo."
-    gcloud storage rsync --recursive --delete-unmatched-destination-objects "$normalized_source" "$target_dir"
-  else
-    log "No se encontro gcloud ni gsutil para sincronizar WordPress desde GCS."
+  if ! command -v gcloud >/dev/null 2>&1 && ! command -v gsutil >/dev/null 2>&1; then
+    log "No se encontro gcloud ni gsutil para copiar WordPress desde GCS."
     return 1
   fi
 
-  log "Sincronizacion de WordPress desde GCS completada."
+  log "Copiando archivos raiz de WordPress desde GCS sin incluir dumps SQL."
+  while IFS= read -r item; do
+    case "$item" in
+      ""|*:|*/)
+        continue
+        ;;
+      *.sql|*.sql.gz|*.sql.zip)
+        log "Omitiendo dump SQL dentro del webroot: $item"
+        continue
+        ;;
+    esac
+
+    root_file="$(basename "$item")"
+    gcs_cp "$item" "$target_dir/$root_file"
+  done < <(gcloud storage ls "$normalized_source/" 2>/dev/null || gsutil ls "$normalized_source/" 2>/dev/null)
+
+  for component in wp-admin wp-includes; do
+    log "Copiando $component desde GCS."
+    rm -rf "$target_dir/$component"
+    gcs_cp_dir "$normalized_source/$component" "$target_dir/"
+  done
+
+  log "Copiando wp-content minimo para levantar la aplicacion."
+  rm -rf "$target_dir/wp-content"
+  mkdir -p "$target_dir/wp-content/plugins" "$target_dir/wp-content/themes"
+
+  while IFS= read -r item; do
+    case "$item" in
+      ""|*:|*/)
+        continue
+        ;;
+      */debug.log|*/katello-ca-consumer-latest.noarch.rpm)
+        continue
+        ;;
+    esac
+
+    root_file="$(basename "$item")"
+    gcs_cp "$item" "$target_dir/wp-content/$root_file"
+  done < <(gcloud storage ls "$normalized_source/wp-content/" 2>/dev/null || gsutil ls "$normalized_source/wp-content/" 2>/dev/null)
+
+  for component in themes languages mu-plugins; do
+    if gcloud storage ls "$normalized_source/wp-content/$component" >/dev/null 2>&1 || gsutil ls "$normalized_source/wp-content/$component" >/dev/null 2>&1; then
+      log "Copiando wp-content/$component desde GCS."
+      gcs_cp_dir "$normalized_source/wp-content/$component" "$target_dir/wp-content/"
+    fi
+  done
+
+  if gcloud storage ls "$normalized_source/wp-content/plugins/index.php" >/dev/null 2>&1 || gsutil ls "$normalized_source/wp-content/plugins/index.php" >/dev/null 2>&1; then
+    gcs_cp "$normalized_source/wp-content/plugins/index.php" "$target_dir/wp-content/plugins/index.php"
+  fi
+
+  for plugin in "$${active_plugins[@]}"; do
+    log "Copiando plugin activo: $plugin"
+    gcs_cp_dir "$normalized_source/wp-content/plugins/$plugin" "$target_dir/wp-content/plugins/"
+  done
+
+  log "Copia selectiva de WordPress desde GCS completada."
+}
+
+sync_wordpress_content_in_background() {
+  local source="$1"
+  local target_dir="$2"
+  local normalized_source="$${source%/}"
+  local background_log="/var/log/wordpress-content-sync.log"
+
+  if [ -z "$source" ]; then
+    return
+  fi
+
+  log "Iniciando copia en segundo plano de uploads y contenido pesado de wp-content."
+  nohup bash -c "
+    set -euo pipefail
+    echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Inicio sync background\" >> '$background_log'
+    for component in uploads gallery upgrade; do
+      if gcloud storage ls '$normalized_source/wp-content/'\"\$component\" >/dev/null 2>&1; then
+        mkdir -p '$target_dir/wp-content'
+        gcloud storage cp --recursive '$normalized_source/wp-content/'\"\$component\" '$target_dir/wp-content/' >> '$background_log' 2>&1 || true
+      fi
+    done
+    chown -R '$WEB_USER:$WEB_GROUP' '$target_dir/wp-content' || true
+    if command -v restorecon >/dev/null 2>&1; then
+      restorecon -RF '$target_dir/wp-content' || true
+    fi
+    echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] Fin sync background\" >> '$background_log'
+  " >/dev/null 2>&1 &
 }
 
 remove_database_dumps_from_webroot() {
@@ -347,11 +468,11 @@ remove_database_dumps_from_webroot() {
 ensure_wordpress_core() {
   local target_dir="$1"
 
-  if [ -d "$target_dir/wp-admin" ] && [ -d "$target_dir/wp-includes" ] && [ -f "$target_dir/wp-config-sample.php" ]; then
+  if [ -d "$target_dir/wp-admin" ] && [ -d "$target_dir/wp-includes" ] && [ -f "$target_dir/wp-config-sample.php" ] && [ -f "$target_dir/wp-settings.php" ] && [ -f "$target_dir/wp-load.php" ]; then
     return
   fi
 
-  log "El core de WordPress esta incompleto. Descargando core oficial para completar wp-admin/wp-includes."
+  log "El core de WordPress esta incompleto. Descargando core oficial para completar archivos base, wp-admin y wp-includes."
   download_latest_wordpress "$target_dir"
 }
 
@@ -479,6 +600,15 @@ install_wordpress_files() {
   fi
 
   log "Instalando WordPress desde GCS: $WP_SOURCE_GCS_URI"
+
+  if [ -d "$target_dir/wp-admin" ] && [ -d "$target_dir/wp-content" ] && [ -d "$target_dir/wp-includes" ] && [ -f "$target_dir/wp-config-sample.php" ]; then
+    log "Los archivos de WordPress ya existen en $target_dir. Se reutilizan para continuar la configuracion."
+    ensure_wordpress_core "$target_dir"
+    validate_wordpress_files "$target_dir"
+    remove_database_dumps_from_webroot "$target_dir"
+    return
+  fi
+
   empty_dir "$target_dir"
 
   case "$WP_SOURCE_GCS_URI" in
@@ -586,21 +716,28 @@ import_sql_file() {
   case "$first_bytes" in
     fffe)
       log "El dump SQL esta en UTF-16LE. Convirtiendo a UTF-8 antes de importar."
-      iconv -f UTF-16LE -t UTF-8 "$sql_file" | mysql --default-character-set=utf8mb4 -u root "$database"
+      iconv -f UTF-16LE -t UTF-8 "$sql_file" | normalize_mysql8_dump_for_mariadb | mysql --default-character-set=utf8mb4 -u root "$database"
       ;;
     feff)
       log "El dump SQL esta en UTF-16BE. Convirtiendo a UTF-8 antes de importar."
-      iconv -f UTF-16BE -t UTF-8 "$sql_file" | mysql --default-character-set=utf8mb4 -u root "$database"
+      iconv -f UTF-16BE -t UTF-8 "$sql_file" | normalize_mysql8_dump_for_mariadb | mysql --default-character-set=utf8mb4 -u root "$database"
       ;;
     *)
       if printf '%s' "$file_info" | grep -qi 'utf-16'; then
         log "El dump SQL fue detectado como UTF-16. Convirtiendo a UTF-8 antes de importar."
-        iconv -f UTF-16 -t UTF-8 "$sql_file" | mysql --default-character-set=utf8mb4 -u root "$database"
+        iconv -f UTF-16 -t UTF-8 "$sql_file" | normalize_mysql8_dump_for_mariadb | mysql --default-character-set=utf8mb4 -u root "$database"
       else
-        mysql --default-character-set=utf8mb4 -u root "$database" < "$sql_file"
+        normalize_mysql8_dump_for_mariadb < "$sql_file" | mysql --default-character-set=utf8mb4 -u root "$database"
       fi
       ;;
   esac
+}
+
+normalize_mysql8_dump_for_mariadb() {
+  sed \
+    -e 's/utf8mb4_0900_ai_ci/utf8mb4_unicode_ci/g' \
+    -e 's/utf8mb4_0900_as_ci/utf8mb4_unicode_ci/g' \
+    -e 's/utf8mb4_0900_bin/utf8mb4_bin/g'
 }
 
 install_wp_cli() {
@@ -770,7 +907,7 @@ sed -i "s/database_name_here/$DB_NAME/" "$WP_DIR/wp-config.php"
 sed -i "s/username_here/$DB_USER/" "$WP_DIR/wp-config.php"
 sed -i "s/password_here/$DB_PASS/" "$WP_DIR/wp-config.php"
 sed -i "s/localhost/127.0.0.1/" "$WP_DIR/wp-config.php"
-sed -i 's/^\$table_prefix = .*/$table_prefix = '\'''"$WP_TABLE_PREFIX"'\'';/' "$WP_DIR/wp-config.php"
+sed -i "s/^\$table_prefix = .*/\$table_prefix = '$WP_TABLE_PREFIX';/" "$WP_DIR/wp-config.php"
 
 # Reemplazar salts
 sed -i "/AUTH_KEY/d" "$WP_DIR/wp-config.php"
@@ -817,7 +954,9 @@ define('WP_MEMORY_LIMIT', '256M');
 define('WP_MAX_MEMORY_LIMIT', '512M');
 
 // Debug (desactivar en producción)
-define('WP_DEBUG', false);
+if (!defined('WP_DEBUG')) {
+    define('WP_DEBUG', false);
+}
 define('WP_DEBUG_LOG', false);
 define('WP_DEBUG_DISPLAY', false);
 WP_EXTRA
@@ -965,6 +1104,8 @@ WP_CRON
 
 systemctl enable "$CRON_SERVICE" >/dev/null 2>&1 || true
 systemctl start "$CRON_SERVICE" >/dev/null 2>&1 || true
+
+sync_wordpress_content_in_background "$WP_SOURCE_GCS_URI" "$WP_DIR"
 
 # ─── Configurar Ops Agent (Logging & Monitoring) ────────────────────────────
 log "Configurando Google Cloud Ops Agent..."
