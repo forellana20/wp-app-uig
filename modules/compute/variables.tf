@@ -72,6 +72,12 @@ variable "image_project" {
   type        = string
 }
 
+variable "image_self_link" {
+  description = "Self link de imagen especifica para el disco de arranque. Si se define, no se consulta image_family/image_project."
+  type        = string
+  default     = ""
+}
+
 variable "startup_script" {
   description = "Script de inicio renderizado"
   type        = string

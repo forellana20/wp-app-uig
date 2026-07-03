@@ -139,6 +139,12 @@ variable "image_project" {
   default     = "rhel-byos-cloud"
 }
 
+variable "image_self_link" {
+  description = "Self link de una imagen RHEL provista por el cliente. Si se define, evita consultar image_family/image_project."
+  type        = string
+  default     = ""
+}
+
 variable "rhel_satellite_server_url" {
   description = "URL del Red Hat Satellite o Capsule del cliente para registrar RHEL. Ej: https://satellite.example.com"
   type        = string

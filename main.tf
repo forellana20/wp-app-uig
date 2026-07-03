@@ -120,6 +120,7 @@ module "compute" {
   boot_disk_type    = var.boot_disk_type
   image_family      = var.image_family
   image_project     = var.image_project
+  image_self_link   = var.image_self_link
 
   # Startup script renderizado con variables
   startup_script = templatefile("${path.module}/scripts/startup.sh", {

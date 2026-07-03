@@ -10,8 +10,14 @@
 # --- Data source: Imagen mas reciente del SO ---------------------------------
 
 data "google_compute_image" "base" {
+  count = var.image_self_link == "" ? 1 : 0
+
   family  = var.image_family
   project = var.image_project
+}
+
+locals {
+  boot_image = var.image_self_link != "" ? var.image_self_link : data.google_compute_image.base[0].self_link
 }
 
 resource "terraform_data" "subnet_change" {
@@ -25,6 +31,7 @@ resource "terraform_data" "boot_image_change" {
   triggers_replace = [
     var.image_family,
     var.image_project,
+    var.image_self_link,
   ]
 }
 
@@ -51,7 +58,7 @@ resource "google_compute_instance" "wordpress" {
     auto_delete = true
 
     initialize_params {
-      image = data.google_compute_image.base.self_link
+      image = local.boot_image
       type  = var.boot_disk_type
       size  = var.boot_disk_size_gb
 
