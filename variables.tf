@@ -61,9 +61,9 @@ variable "subnet_cidr" {
 }
 
 variable "vpn_cidr" {
-  description = "CIDR de la red VPN (oficinas/on-premise)"
+  description = "CIDR on-premise autorizado para SSH por VPN. Dejar vacio para usar solo IAP."
   type        = string
-  default     = "10.130.20.0/24"
+  default     = ""
 }
 
 variable "vpn_enabled" {

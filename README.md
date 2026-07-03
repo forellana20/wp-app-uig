@@ -30,9 +30,9 @@ Infraestructura como Código (IaC) para desplegar WordPress en GCP con una VM ú
                                     │  │ + VPN (opt.)  │  │   (Salida Internet)  │     │
                                     │  └──────────────┘  └──────────────────────┘     │
  ┌──────────┐  VPN   │             │                                                  │
- │ Oficinas │ ◄──────┼─────────────┤   Firewall Rules:                               │
- │ (admin)  │        │             │    HTTP/HTTPS desde LB                         │
- └──────────┘        │             │    SSH desde IAP/VPN                            │
+ │ On-prem  │ ◄──────┼─────────────┤   Firewall Rules:                               │
+ │ Satellite│        │             │    HTTP/HTTPS desde LB                         │
+ └──────────┘        │             │    SSH solo desde IAP                           │
                                     │   Todo lo demás denegado                      │
                                     └─────────────────────────────────────────────────┘
 ```
@@ -200,7 +200,7 @@ gcloud compute ssl-certificates describe edufis-prod-wordpress-ssl \
 | Componente | Descripción |
 |------------|-------------|
 | **Cloud Armor** | WAF con reglas contra SQLi, XSS, LFI, RFI + Rate Limiting |
-| **Firewall** | Solo permite tráfico desde LB y SSH desde IAP/VPN |
+| **Firewall** | Solo permite tráfico desde LB y SSH desde IAP |
 | **IAP SSH** | Acceso SSH sin IP pública, autenticado con Google Identity |
 | **Service Account** | Permisos mínimos (logging + monitoring) |
 | **Shielded VM** | Secure Boot, vTPM, Integrity Monitoring |
